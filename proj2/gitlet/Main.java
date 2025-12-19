@@ -74,16 +74,19 @@ public class Main {
                     throw new GitletException("Incorrect operands.");
                 }
                 repo.rm_branch(args[1]);
+                break;
             case"reset":
                 if (args.length != 2) {
                     throw new GitletException("Incorrect operands.");
                 }
                 repo.reset(args[1]);
+                break;
             case"merge":
                 if (args.length != 2) {
                     throw new GitletException("Incorrect operands.");
                 }
                 repo.merge(args[1]);
+                break;
             // TODO: FILL THE REST IN
         }
     }
