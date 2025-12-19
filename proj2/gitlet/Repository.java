@@ -441,7 +441,11 @@ public class Repository {
 
 
             if (Objects.equals(splitBlob, branchBlob)) {
-                mergedBlobs.put(fileName, headBlob);
+                if (headBlob != null) {
+                    mergedBlobs.put(fileName, headBlob);
+                } else {
+                    mergedBlobs.remove(fileName);
+                }
                 continue;
             }
 
