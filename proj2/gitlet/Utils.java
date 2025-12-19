@@ -190,16 +190,16 @@ class Utils {
 
     /* OTHER FILE UTILITIES */
 
-    /** Return the concatentation of FIRST and OTHERS into a File designator,
-     *  analogous to the {@link java.nio.file.Paths.#get(String, String[])}
-     *  method. */
+//    /** Return the concatentation of FIRST and OTHERS into a File designator,
+//     *  analogous to the {@link java.nio.file.Paths.#get(String, String[])}
+//     *  method. */
     static File join(String first, String... others) {
         return Paths.get(first, others).toFile();
     }
 
-    /** Return the concatentation of FIRST and OTHERS into a File designator,
-     *  analogous to the {@link java.nio.file.Paths.#get(String, String[])}
-     *  method. */
+//    /** Return the concatentation of FIRST and OTHERS into a File designator,
+//     *  analogous to the {@link java.nio.file.Paths.#get(String, String[])}
+//     *  method. */
     static File join(File first, String... others) {
         return Paths.get(first.getPath(), others).toFile();
     }
@@ -224,13 +224,13 @@ class Utils {
 
     /* MESSAGES AND ERROR REPORTING */
 
-    /** Return a GitletException whose message is composed from MSG and ARGS as
+    /** Return a GitletException whose message is composed of MSG and ARGS as
      *  for the String.format method. */
     static GitletException error(String msg, Object... args) {
         return new GitletException(String.format(msg, args));
     }
 
-    /** Print a message composed from MSG and ARGS as for the String.format
+    /** Print a message composed from MSG and ARGS as for the String. Format
      *  method, followed by a newline. */
     static void message(String msg, Object... args) {
         System.out.printf(msg, args);
