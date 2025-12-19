@@ -293,6 +293,7 @@ public class Repository {
         Commit targetcommit=readCommit(commitId);
         if (targetcommit==null){
             message("No commit with that id exists");
+            System.exit(0);
         }
         for (Map.Entry<String, String> entry : targetcommit.getBlobs().entrySet()) {
             String fileName = entry.getKey();
@@ -329,6 +330,7 @@ public class Repository {
         String currentbranch = getCurrentBranchName();
         if (currentbranch.equals(branchname)) {
             message("Cannot merge a branch with itself.");
+            System.exit(0);
         }
         StagingArea stagingArea = readObject(INDEX, StagingArea.class);
         if (!stagingArea.isEmpty()) {
