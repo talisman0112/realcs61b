@@ -332,6 +332,22 @@ public class Repository {
             message("Cannot merge a branch with itself.");
             System.exit(0);
         }
+        Commit headCommit = getHeadCommit();
+        Commit branchCommit =readCommit(readContentsAsString(join(HEADS_DIR, branchname)));   // 你需要实现这个方法，或直接读 refs/heads/branchname
+
+        // 关键检查：如果 branchCommit 已经在 headCommit 的历史中，则 already up-to-date
+        if (isAncestor(headCommit, branchCommit)) {
+            System.out.println("Already up-to-date.");
+            return;
+        }
+
+        // 如果 headCommit 是 branchCommit 的祖先，则 fast-forward
+        if (isAncestor(branchCommit, headCommit)) {
+            // 执行 fast-forward：checkout branch，然后更新 HEAD
+            checkoutBranch(branchname);
+            System.out.println("Current branch fast-forwarded.");
+            return;
+        }
         StagingArea stagingArea = readObject(INDEX, StagingArea.class);
         if (!stagingArea.isEmpty()) {
             message("You have uncommitted changes.");
@@ -456,17 +472,7 @@ public class Repository {
                 restrictedDelete(join(CWD, fileName));
                 continue;
             }
-            if (headBlob == null && branchBlob != null) {
-                mergedBlobs.remove(fileName);
-                restrictedDelete(join(CWD, fileName));
-                continue;
-            }
 
-            if (branchBlob == null && headBlob != null) {
-                mergedBlobs.remove(fileName);
-                restrictedDelete(join(CWD, fileName));
-                continue;
-            }
             hasConflict = true;
 
             String headContent = headBlob == null ? "" : new String(readBlob(headBlob).getContent(), StandardCharsets.UTF_8);
@@ -499,7 +505,33 @@ public class Repository {
         }
 
 
-//fuzhufangfa
+
+
+    //fuzhufangfa
+    private boolean isAncestor(Commit ancestor, Commit descendant) {
+        if (descendant == null) return false;
+        Set<String> visited = new HashSet<>();
+        Queue<Commit> queue = new LinkedList<>();
+        queue.add(descendant);
+
+        while (!queue.isEmpty()) {
+            Commit curr = queue.remove();
+            if (curr.getHash().equals(ancestor.getHash())) {
+                return true;
+            }
+            visited.add(curr.getHash());
+
+            String parent = curr.getParent();
+            if (parent != null && !visited.contains(parent)) {
+                queue.add(readCommit(parent));
+            }
+            String secondParent = curr.getSecondParent();
+            if (secondParent != null && !visited.contains(secondParent)) {
+                queue.add(readCommit(secondParent));
+            }
+        }
+        return false;
+    }
     private Commit getHeadCommit() {
         String ref = readContentsAsString(HEAD);
         String branch = ref.substring("ref: refs/heads/".length());
