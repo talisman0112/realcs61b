@@ -322,26 +322,28 @@ public class Repository {
     }
     public void merge(String branchname) {
         validateInitialized();
-        File F = join(HEADS_DIR, branchname);
-        if (!F.exists()) {
+
+        File branchFile = join(HEADS_DIR, branchname);
+        if (!branchFile.exists()) {
             message("A branch with that name does not exist.");
             System.exit(0);
         }
-        String currentbranch = getCurrentBranchName();
-        if (currentbranch.equals(branchname)) {
+
+        String currentBranch = getCurrentBranchName();
+        if (currentBranch.equals(branchname)) {
             message("Cannot merge a branch with itself.");
             System.exit(0);
         }
-        Commit currentCommit = getHeadCommit();
-        Commit givenCommit = readCommit(readContentsAsString(join(HEADS_DIR, branchname)));
 
-// 情况1: given branch 是 current branch 的祖先 → 什么都不做
+        Commit currentCommit = getHeadCommit();
+        Commit givenCommit = readCommit(readContentsAsString(branchFile));
+
+        // ========== 关键：正确的祖先判断，彻底解决 test36a ==========
         if (isAncestor(givenCommit, currentCommit)) {
             message("Given branch is an ancestor of the current branch.");
             return;
         }
 
-// 情况2: current branch 是 given branch 的祖先 → fast-forward
         if (isAncestor(currentCommit, givenCommit)) {
             checkoutBranch(branchname);
             writeObject(INDEX, new StagingArea());
@@ -349,13 +351,17 @@ public class Repository {
             message("Current branch fast-forwarded.");
             return;
         }
+        // ==================================================================
+
+        // 检查是否有未提交的更改（staging area）
         StagingArea stagingArea = readObject(INDEX, StagingArea.class);
         if (!stagingArea.isEmpty()) {
             message("You have uncommitted changes.");
             System.exit(0);
         }
-        Commit head = getHeadCommit();
-        for (Map.Entry<String, String> entry : head.getBlobs().entrySet()) {
+
+        // 检查工作区是否有修改但未add的文件
+        for (Map.Entry<String, String> entry : currentCommit.getBlobs().entrySet()) {
             String fileName = entry.getKey();
             String headBlobHash = entry.getValue();
             File fileInCWD = join(CWD, fileName);
@@ -370,59 +376,76 @@ public class Repository {
                 System.exit(0);
             }
         }
-        String targetHash = readContentsAsString(F);
-        Commit target = readCommit(targetHash);
-        for (String name : target.getBlobs().keySet()) {
+
+        // 检查 untracked file in the way
+        for (String name : givenCommit.getBlobs().keySet()) {
             File f = join(CWD, name);
-            if (f.exists() && !getHeadCommit().getBlobs().containsKey(name)
-                    && !readObject(INDEX, StagingArea.class).getAddition().containsKey(name)) {
+            if (f.exists()
+                    && !currentCommit.getBlobs().containsKey(name)
+                    && !stagingArea.getAddition().containsKey(name)) {
                 message("There is an untracked file in the way; delete it, or add and commit it first.");
                 System.exit(0);
             }
         }
-        Commit curcommit = getHeadCommit();
-        String branchhash = readContentsAsString(join(HEADS_DIR, branchname));
-        Commit branchcommit = readCommit(branchhash);
+
+        // ========== 下面开始真正的三路合并 ==========
+        // 我们直接用你原来的手动找 split point 的方式，但这次要正确遍历 secondParent！
+        // （因为你不想加新方法，我们就修改原来的循环，加入 secondParent 遍历）
+
         Set<String> currentAncestors = new HashSet<>();
-        Commit temp = curcommit;
-        while (temp != null) {
+        Queue<Commit> queue = new LinkedList<>();
+        queue.add(currentCommit);
+        Set<String> visited = new HashSet<>();
+
+        while (!queue.isEmpty()) {
+            Commit temp = queue.remove();
             currentAncestors.add(temp.getHash());
+            visited.add(temp.getHash());
+
             String parentHash = temp.getParent();
-            temp = (parentHash == null) ? null : readCommit(parentHash);
+            if (parentHash != null && !visited.contains(parentHash)) {
+                queue.add(readCommit(parentHash));
+            }
+            String secondParentHash = temp.getSecondParent();
+            if (secondParentHash != null && !visited.contains(secondParentHash)) {
+                queue.add(readCommit(secondParentHash));
+            }
         }
-        temp = branchcommit;
+
+        // 从 givenCommit 往前找第一个在 currentAncestors 中的 commit
+        queue.clear();
+        visited.clear();
+        queue.add(givenCommit);
+        visited.add(givenCommit.getHash());
+
         String splitcommithash = null;
-        while (temp != null) {
+        while (!queue.isEmpty()) {
+            Commit temp = queue.remove();
             if (currentAncestors.contains(temp.getHash())) {
                 splitcommithash = temp.getHash();
                 break;
             }
+
             String parentHash = temp.getParent();
-            temp = (parentHash == null) ? null : readCommit(parentHash);
+            if (parentHash != null && !visited.contains(parentHash)) {
+                visited.add(parentHash);
+                queue.add(readCommit(parentHash));
+            }
+            String secondParentHash = temp.getSecondParent();
+            if (secondParentHash != null && !visited.contains(secondParentHash)) {
+                visited.add(secondParentHash);
+                queue.add(readCommit(secondParentHash));
+            }
         }
+
         if (splitcommithash == null) {
             message("Internal error: no split point found.");
             System.exit(0);
         }
-//        if (splitcommithash.equals(branchcommit.getHash())) {
-//            message("Given branch is an ancestor of the current branch.");
-//            return;
-//        }
-//        if (splitcommithash.equals(curcommit.getHash())) {
-//            for (String fileName : curcommit.getBlobs().keySet()) {
-//                restrictedDelete(join(CWD, fileName));
-//            }
-//            // cover
-//            for (Map.Entry<String, String> entry : branchcommit.getBlobs().entrySet()) {
-//                Blob blob = readBlob(entry.getValue());
-//                writeContents(join(CWD, entry.getKey()), (Object) blob.getContent());
-//            }
-//            writeObject(INDEX, new StagingArea());
-//            updateBranchPointer(branchcommit.getHash());
-//            message("Current branch fast-forwarded.");
-//            return;
-//        }
+
         Commit splitcommit = readCommit(splitcommithash);
+        Commit curcommit = currentCommit;      // 统一用 currentCommit
+        Commit branchcommit = givenCommit;     // 统一用 givenCommit
 
         Set<String> allFiles = new HashSet<>();
         allFiles.addAll(splitcommit.getBlobs().keySet());
@@ -430,7 +453,7 @@ public class Repository {
         allFiles.addAll(branchcommit.getBlobs().keySet());
 
         boolean hasConflict = false;
-        Map<String, String> mergedBlobs = new HashMap<>(curcommit.getBlobs());  // 关键！从当前 commit 继承所有文件
+        Map<String, String> mergedBlobs = new HashMap<>(curcommit.getBlobs());
 
         for (String fileName : allFiles) {
             String splitBlob = splitcommit.getBlobs().get(fileName);
@@ -457,7 +480,6 @@ public class Repository {
                 }
                 continue;
             }
-
 
             if (Objects.equals(splitBlob, branchBlob)) {
                 if (headBlob != null) {
@@ -498,12 +520,180 @@ public class Repository {
             message("Encountered a merge conflict.");
         }
 
-        String mergeMessage = "Merged " + branchname + " into " + currentbranch + ".";
+        String mergeMessage = "Merged " + branchname + " into " + currentBranch + ".";
         Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
         saveCommit(mergeCommit);
         writeObject(INDEX, new StagingArea());
         updateBranchPointer(mergeCommit.getHash());
-        }
+    }
+//    public void merge(String branchname) {
+//        validateInitialized();
+//        File F = join(HEADS_DIR, branchname);
+//        if (!F.exists()) {
+//            message("A branch with that name does not exist.");
+//            System.exit(0);
+//        }
+//        String currentbranch = getCurrentBranchName();
+//        if (currentbranch.equals(branchname)) {
+//            message("Cannot merge a branch with itself.");
+//            System.exit(0);
+//        }
+//        Commit currentCommit = getHeadCommit();
+//        Commit givenCommit = readCommit(readContentsAsString(join(HEADS_DIR, branchname)));
+//
+//// 情况1: given branch 是 current branch 的祖先 → 什么都不做
+//        if (isAncestor(givenCommit, currentCommit)) {
+//            message("Given branch is an ancestor of the current branch.");
+//            return;
+//        }
+//
+//// 情况2: current branch 是 given branch 的祖先 → fast-forward
+//        if (isAncestor(currentCommit, givenCommit)) {
+//            checkoutBranch(branchname);
+//            writeObject(INDEX, new StagingArea());
+//            updateBranchPointer(givenCommit.getHash());
+//            message("Current branch fast-forwarded.");
+//            return;
+//        }
+//        StagingArea stagingArea = readObject(INDEX, StagingArea.class);
+//        if (!stagingArea.isEmpty()) {
+//            message("You have uncommitted changes.");
+//            System.exit(0);
+//        }
+//        Commit head = getHeadCommit();
+//        for (Map.Entry<String, String> entry : head.getBlobs().entrySet()) {
+//            String fileName = entry.getKey();
+//            String headBlobHash = entry.getValue();
+//            File fileInCWD = join(CWD, fileName);
+//            if (fileInCWD.exists()) {
+//                Blob currentBlob = new Blob(fileInCWD);
+//                if (!currentBlob.getHash().equals(headBlobHash)) {
+//                    message("You have uncommitted changes.");
+//                    System.exit(0);
+//                }
+//            } else {
+//                message("You have uncommitted changes.");
+//                System.exit(0);
+//            }
+//        }
+//        String targetHash = readContentsAsString(F);
+//        Commit target = readCommit(targetHash);
+//        for (String name : target.getBlobs().keySet()) {
+//            File f = join(CWD, name);
+//            if (f.exists() && !getHeadCommit().getBlobs().containsKey(name)
+//                    && !readObject(INDEX, StagingArea.class).getAddition().containsKey(name)) {
+//                message("There is an untracked file in the way; delete it, or add and commit it first.");
+//                System.exit(0);
+//            }
+//        }
+//
+//        Commit curcommit = getHeadCommit();
+//        String branchhash = readContentsAsString(join(HEADS_DIR, branchname));
+//        Commit branchcommit = readCommit(branchhash);
+//        Set<String> currentAncestors = new HashSet<>();
+//        Commit temp = curcommit;
+//        while (temp != null) {
+//            currentAncestors.add(temp.getHash());
+//            String parentHash = temp.getParent();
+//            temp = (parentHash == null) ? null : readCommit(parentHash);
+//        }
+//        temp = branchcommit;
+//        String splitcommithash = null;
+//        while (temp != null) {
+//            if (currentAncestors.contains(temp.getHash())) {
+//                splitcommithash = temp.getHash();
+//                break;
+//            }
+//            String parentHash = temp.getParent();
+//            temp = (parentHash == null) ? null : readCommit(parentHash);
+//        }
+//        if (splitcommithash == null) {
+//            message("Internal error: no split point found.");
+//            System.exit(0);
+//        }
+//
+//        Commit splitcommit = readCommit(splitcommithash);
+//
+//        Set<String> allFiles = new HashSet<>();
+//        allFiles.addAll(splitcommit.getBlobs().keySet());
+//        allFiles.addAll(curcommit.getBlobs().keySet());
+//        allFiles.addAll(branchcommit.getBlobs().keySet());
+//
+//        boolean hasConflict = false;
+//        Map<String, String> mergedBlobs = new HashMap<>(curcommit.getBlobs());  // 关键！从当前 commit 继承所有文件
+//
+//        for (String fileName : allFiles) {
+//            String splitBlob = splitcommit.getBlobs().get(fileName);
+//            String headBlob   = curcommit.getBlobs().get(fileName);
+//            String branchBlob = branchcommit.getBlobs().get(fileName);
+//
+//            if (Objects.equals(headBlob, branchBlob)) {
+//                if (headBlob != null) {
+//                    mergedBlobs.put(fileName, headBlob);
+//                } else {
+//                    mergedBlobs.remove(fileName);
+//                    restrictedDelete(join(CWD, fileName));
+//                }
+//                continue;
+//            }
+//
+//            if (Objects.equals(splitBlob, headBlob)) {
+//                if (branchBlob != null) {
+//                    mergedBlobs.put(fileName, branchBlob);
+//                    writeContents(join(CWD, fileName), (Object) readBlob(branchBlob).getContent());
+//                } else {
+//                    mergedBlobs.remove(fileName);
+//                    restrictedDelete(join(CWD, fileName));
+//                }
+//                continue;
+//            }
+//
+//
+//            if (Objects.equals(splitBlob, branchBlob)) {
+//                if (headBlob != null) {
+//                    mergedBlobs.put(fileName, headBlob);
+//                } else {
+//                    mergedBlobs.remove(fileName);
+//                }
+//                continue;
+//            }
+//
+//            if (splitBlob != null && headBlob == null && branchBlob == null) {
+//                mergedBlobs.remove(fileName);
+//                restrictedDelete(join(CWD, fileName));
+//                continue;
+//            }
+//
+//            hasConflict = true;
+//
+//            String headContent = headBlob == null ? "" : new String(readBlob(headBlob).getContent(), StandardCharsets.UTF_8);
+//            String branchContent = branchBlob == null ? "" : new String(readBlob(branchBlob).getContent(), StandardCharsets.UTF_8);
+//
+//            String conflictContent =
+//                    "<<<<<<< HEAD\n" +
+//                            headContent +
+//                            "=======\n" +
+//                            branchContent +
+//                            ">>>>>>>\n";
+//
+//            File file = join(CWD, fileName);
+//            writeContents(file, conflictContent);
+//
+//            Blob conflictBlob = new Blob(conflictContent.getBytes(StandardCharsets.UTF_8));
+//            saveBlob(conflictBlob);
+//            mergedBlobs.put(fileName, conflictBlob.getHash());
+//        }
+//
+//        if (hasConflict) {
+//            message("Encountered a merge conflict.");
+//        }
+//
+//        String mergeMessage = "Merged " + branchname + " into " + currentbranch + ".";
+//        Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
+//        saveCommit(mergeCommit);
+//        writeObject(INDEX, new StagingArea());
+//        updateBranchPointer(mergeCommit.getHash());
+
 
 
 //fuzhufangfa
