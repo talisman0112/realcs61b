@@ -456,7 +456,17 @@ public class Repository {
                 restrictedDelete(join(CWD, fileName));
                 continue;
             }
+            if (headBlob == null && branchBlob != null) {
+                mergedBlobs.remove(fileName);
+                restrictedDelete(join(CWD, fileName));
+                continue;
+            }
 
+            if (branchBlob == null && headBlob != null) {
+                mergedBlobs.remove(fileName);
+                restrictedDelete(join(CWD, fileName));
+                continue;
+            }
             hasConflict = true;
 
             String headContent = headBlob == null ? "" : new String(readBlob(headBlob).getContent(), StandardCharsets.UTF_8);
@@ -484,7 +494,6 @@ public class Repository {
         String mergeMessage = "Merged " + branchname + " into " + currentbranch + ".";
         Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
         saveCommit(mergeCommit);
-
         writeObject(INDEX, new StagingArea());
         updateBranchPointer(mergeCommit.getHash());
         }
