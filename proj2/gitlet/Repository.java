@@ -303,8 +303,11 @@ public class Repository {
             }
         }
         // delete all heads file
-        for (String fileName : getHeadCommit().getBlobs().keySet()) {
-            restrictedDelete(join(CWD, fileName));
+        List<String> allFilesInCWD = plainFilenamesIn(CWD);
+        if (allFilesInCWD != null) {
+            for (String fileName : allFilesInCWD) {
+                restrictedDelete(join(CWD, fileName));
+            }
         }
         // cover
         for (Map.Entry<String, String> entry : targetcommit.getBlobs().entrySet()) {
