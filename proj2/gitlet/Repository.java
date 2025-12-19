@@ -441,7 +441,6 @@ public class Repository {
 
 
             if (Objects.equals(splitBlob, branchBlob)) {
-                // headBlob 一定 != null，否则和上面情况2冲突
                 mergedBlobs.put(fileName, headBlob);
                 continue;
             }

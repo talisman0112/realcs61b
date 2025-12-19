@@ -106,7 +106,7 @@ public class Commit implements Serializable {
             list.add(e.getKey());
             list.add(e.getValue());
         }
-        return Utils.sha1(list);
+        return Utils.sha1(list.toArray());
     }
     public String getHash() { return hash; }
     public String getMessage() { return message; }
