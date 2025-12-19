@@ -229,15 +229,16 @@ public class Repository {
         Commit target = readCommit(targetHash);
 
 
-        for (String name : target.getBlobs().keySet()) {
-            File f = join(CWD, name);
-            if (f.exists() && !getHeadCommit().getBlobs().containsKey(name)
-                    && !readObject(INDEX, StagingArea.class).getAddition().containsKey(name)) {
-                message("There is an untracked file in the way; delete it, or add and commit it first.");
-                System.exit(0);
+        if (target != null) {
+            for (String name : target.getBlobs().keySet()) {
+                File f = join(CWD, name);
+                if (f.exists() && !getHeadCommit().getBlobs().containsKey(name)
+                        && !readObject(INDEX, StagingArea.class).getAddition().containsKey(name)) {
+                    message("There is an untracked file in the way; delete it, or add and commit it first.");
+                    System.exit(0);
+                }
             }
         }
-
 
         for (String name : getHeadCommit().getBlobs().keySet()) {
             restrictedDelete(join(CWD, name));
@@ -380,6 +381,10 @@ public class Repository {
             String parentHash = temp.getParent();
             temp = (parentHash == null) ? null : readCommit(parentHash);
         }
+        if (splitcommithash == null) {
+            message("Internal error: no split point found.");
+            System.exit(0);
+        }
         if (splitcommithash.equals(branchcommit.getHash())) {
             message("Given branch is an ancestor of the current branch.");
             return;
@@ -406,97 +411,80 @@ public class Repository {
         allFiles.addAll(branchcommit.getBlobs().keySet());
 
         boolean hasConflict = false;
-        Map<String, String> mergedBlobs = new HashMap<>();
+        Map<String, String> mergedBlobs = new HashMap<>(curcommit.getBlobs());  // 关键！从当前 commit 继承所有文件
 
-        String splitHashB = null;
-        String headHashB = null;
-        String targetHashB = null;
         for (String fileName : allFiles) {
-            splitHashB = splitcommit.getBlobs().get(fileName);
-            headHashB = curcommit.getBlobs().get(fileName);
-            targetHashB = branchcommit.getBlobs().get(fileName);
-            String resultBlobHash = null;
+            String splitBlob = splitcommit.getBlobs().get(fileName);
+            String headBlob   = curcommit.getBlobs().get(fileName);
+            String branchBlob = branchcommit.getBlobs().get(fileName);
 
-            if (splitHashB == null) {
-                if (headHashB != null && targetHashB != null) {
-                    hasConflict = true;
-                } else if (targetHashB != null) {
-                    resultBlobHash = targetHashB;
-                } else if (headHashB != null) {
-                    resultBlobHash = headHashB;
+            // 情况1：两边修改相同 → 直接保留 head 的版本
+            if (Objects.equals(headBlob, branchBlob)) {
+                if (headBlob != null) {
+                    mergedBlobs.put(fileName, headBlob);
                 } else {
-                    if (headHashB == null && targetHashB == null) {
-                        continue;
-                    }
-                    if (headHashB!=null) {
-                        if (splitHashB.equals(headHashB)) {
-                            continue;
-                        } else {
-                            hasConflict = true;
-                        }
-                    } else if (targetHashB!=null) {
-                        if(splitHashB.equals(targetHashB)){
-                            continue;
-                        }
-                        else{
-                            hasConflict=true;
-                        }
-                    }
-                    else{
-                        if(headHashB.equals(targetHashB)){
-                            resultBlobHash=targetHashB;
-                        }
-                        else{
-                            if(headHashB.equals(splitHashB)){
-                                resultBlobHash=targetHashB;
-                            }
-                            else if(targetHashB.equals(splitHashB)){
-                                resultBlobHash=headHashB;
-                            }
-                            else{
-                                hasConflict=true;
-                            }
-                        }
-                    }
+                    mergedBlobs.remove(fileName);
+                    restrictedDelete(join(CWD, fileName));
                 }
-                File file=join(CWD,fileName);
-                if (hasConflict&&(resultBlobHash==null||(headHashB!=null&&targetHash!=null&&!headHashB
-                        .equals(targetHashB)))){
-                    String headContent = headHashB == null ? ""
-                            : new String(readBlob(headHashB).getContent(), StandardCharsets.UTF_8);
-                    String targetContent = targetHashB == null ? ""
-                            : new String(readBlob(targetHashB).getContent(), StandardCharsets.UTF_8);
-
-                    String conflictContent =
-                            "<<<<<<< HEAD\n" +
-                                    headContent +
-                                    "=======\n" +
-                                    targetContent +
-                                    ">>>>>>>\n";
-                    writeContents(file, conflictContent);
-                    Blob conflictBlob = new Blob(conflictContent.getBytes(StandardCharsets.UTF_8));
-                    saveBlob(conflictBlob);
-                    mergedBlobs.put(fileName, conflictBlob.getHash());
-                }
-                else if (resultBlobHash != null) {
-                    Blob blob = readBlob(resultBlobHash);
-                    writeContents(file, (Object) blob.getContent());
-                    mergedBlobs.put(fileName, resultBlobHash);
+                continue;
+            }
+            // 情况2：当前分支没改（head == split），给定分支改了 → 采用给定分支的
+            if (Objects.equals(splitBlob, headBlob)) {
+                if (branchBlob != null) {
+                    mergedBlobs.put(fileName, branchBlob);
+                    writeContents(join(CWD, fileName), (Object) readBlob(branchBlob).getContent());
                 } else {
-                    restrictedDelete(file);
+                    mergedBlobs.remove(fileName);
+                    restrictedDelete(join(CWD, fileName));
                 }
+                continue;
             }
-            if(hasConflict){
-                message("Encountered a merge conflict.");
-            }
-            String mergeMessage = "Merged " + branchname + " into " + currentbranch + ".";
-            Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
-            saveCommit(mergeCommit);
 
-            writeObject(INDEX, new StagingArea());
-            updateBranchPointer(mergeCommit.getHash());
+
+            if (Objects.equals(splitBlob, branchBlob)) {
+                // headBlob 一定 != null，否则和上面情况2冲突
+                mergedBlobs.put(fileName, headBlob);
+                continue;
+            }
+
+            if (splitBlob != null && headBlob == null && branchBlob == null) {
+                mergedBlobs.remove(fileName);
+                restrictedDelete(join(CWD, fileName));
+                continue;
+            }
+
+            hasConflict = true;
+
+            String headContent = headBlob == null ? "" : new String(readBlob(headBlob).getContent(), StandardCharsets.UTF_8);
+            String branchContent = branchBlob == null ? "" : new String(readBlob(branchBlob).getContent(), StandardCharsets.UTF_8);
+
+            String conflictContent =
+                    "<<<<<<< HEAD\n" +
+                            headContent +
+                            "=======\n" +
+                            branchContent +
+                            ">>>>>>>\n";
+
+            File file = join(CWD, fileName);
+            writeContents(file, conflictContent);
+
+            Blob conflictBlob = new Blob(conflictContent.getBytes(StandardCharsets.UTF_8));
+            saveBlob(conflictBlob);
+            mergedBlobs.put(fileName, conflictBlob.getHash());
         }
-    }
+
+        if (hasConflict) {
+            message("Encountered a merge conflict.");
+        }
+
+        String mergeMessage = "Merged " + branchname + " into " + currentbranch + ".";
+        Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
+        saveCommit(mergeCommit);
+
+        writeObject(INDEX, new StagingArea());
+        updateBranchPointer(mergeCommit.getHash());
+        }
+
 
 //fuzhufangfa
     private Commit getHeadCommit() {
@@ -517,6 +505,10 @@ public class Repository {
 
     private void checkoutFileFromCommit(String commitHash, String fileName) {
         Commit c = readCommit(commitHash);
+        if (c == null) {
+            message("No commit with that id exists.");
+            System.exit(0);
+        }
         String blobHash = c.getBlobs().get(fileName);
         if (blobHash == null) {
             message("File does not exist in that commit.");
@@ -524,9 +516,7 @@ public class Repository {
         }
         Blob b = readBlob(blobHash);
         writeContents(join(CWD, fileName), (Object) b.getContent());
-
     }
-
     private String findCommitByPrefix(String prefix) {
         if (prefix == null || prefix.isEmpty()) {
             return null;
