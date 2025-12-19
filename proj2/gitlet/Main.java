@@ -1,5 +1,7 @@
 package gitlet;
 
+import static gitlet.Utils.message;
+
 /** Driver class for Gitlet, a subset of the Git version-control system.
  *  @author TODO
  */
@@ -10,6 +12,10 @@ public class Main {
      */
     public static void main(String[] args) {
         // TODO: what if args is empty?
+        if (args.length == 0) {
+            message("Please enter a command.");
+            System.exit(0);
+        }
         String firstArg = args[0];
         Repository repo=new Repository();
         switch(firstArg) {
@@ -87,21 +93,22 @@ public class Main {
                 }
                 repo.merge(args[1]);
                 break;
+            default:
+                message("No command with that name exists.");
+                System.exit(0);
             // TODO: FILL THE REST IN
         }
     }
     private static void checkoutHandler(String[] args, Repository repo) {
         if (args.length == 3 && "--".equals(args[1])) {
-            // java gitlet.Main checkout -- filename
             repo.checkoutFile(args[2]);
         } else if (args.length == 4 && "--".equals(args[2])) {
-            // java gitlet.Main checkout commitId -- filename
             repo.checkoutFile(args[1], args[3]);
         } else if (args.length == 2) {
-            // java gitlet.Main checkout branchName
             repo.checkoutBranch(args[1]);
         } else {
-            throw new GitletException("Incorrect operands.");
+            message("Incorrect operands.");
+            System.exit(0);
         }
     }
 }

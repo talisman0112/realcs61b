@@ -418,7 +418,6 @@ public class Repository {
             String headBlob   = curcommit.getBlobs().get(fileName);
             String branchBlob = branchcommit.getBlobs().get(fileName);
 
-            // 情况1：两边修改相同 → 直接保留 head 的版本
             if (Objects.equals(headBlob, branchBlob)) {
                 if (headBlob != null) {
                     mergedBlobs.put(fileName, headBlob);
@@ -428,7 +427,7 @@ public class Repository {
                 }
                 continue;
             }
-            // 情况2：当前分支没改（head == split），给定分支改了 → 采用给定分支的
+
             if (Objects.equals(splitBlob, headBlob)) {
                 if (branchBlob != null) {
                     mergedBlobs.put(fileName, branchBlob);
