@@ -692,7 +692,7 @@ public class Repository {
 //        Commit mergeCommit = new Commit(mergeMessage, curcommit.getHash(), branchcommit.getHash(), mergedBlobs);
 //        saveCommit(mergeCommit);
 //        writeObject(INDEX, new StagingArea());
-//        updateBranchPointer(mergeCommit.getHash());
+//        updateBranchPointer(mergeCommit.getHash());}
 
 
 
