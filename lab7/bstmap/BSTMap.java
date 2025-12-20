@@ -22,7 +22,7 @@ public BSTMap(){
     size=0;
     root=null;
 }
-public Node getnode(Node item, K key){
+private Node getnode(Node item, K key){
     if(item==null){
         return null;
     }
@@ -90,7 +90,7 @@ public Node getnode(Node item, K key){
 
 
     @Override
-    public Set keySet() {
+    public Set<K> keySet() {
         Set<K> keys = new TreeSet<>();
         addKeysInOrder(root, keys);
         return keys;
@@ -117,7 +117,7 @@ public Node getnode(Node item, K key){
         size--;
         return removeval;
     }
-    public Node removehelp(Node node,K key){
+   private Node removehelp(Node node,K key){
         if(node==null){
             return null;
         }
@@ -147,7 +147,7 @@ public Node getnode(Node item, K key){
         };
         return node;
     }
-public Node findmin(Node node){
+private Node findmin(Node node){
     if(node.left==null) {
         return node;
     }
