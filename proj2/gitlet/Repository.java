@@ -51,13 +51,10 @@ public class Repository {
             message("File does not exist.");
             System.exit(0);
         }
-
         Blob blob = new Blob(file);
         saveBlob(blob);
-
         StagingArea stage = readObject(INDEX, StagingArea.class);
         Commit head = getHeadCommit();
-
         String oldHash = head.getBlobs().get(fileName);
         if (oldHash != null && oldHash.equals(blob.getHash())) {
             stage.getAddition().remove(fileName);
@@ -308,7 +305,9 @@ public class Repository {
         List<String> allFilesInCWD = plainFilenamesIn(CWD);
         if (allFilesInCWD != null) {
             for (String fileName : allFilesInCWD) {
-                restrictedDelete(join(CWD, fileName));
+                if (!fileName.equals(".gitlet")) {  // 忽略仓库目录
+                    restrictedDelete(join(CWD, fileName));
+                }
             }
         }
         // cover
@@ -338,7 +337,7 @@ public class Repository {
         Commit currentCommit = getHeadCommit();
         Commit givenCommit = readCommit(readContentsAsString(branchFile));
 
-        // ========== 关键：正确的祖先判断，彻底解决 test36a ==========
+        // ========== 正确的祖先判断==========
         if (isAncestor(givenCommit, currentCommit)) {
             message("Given branch is an ancestor of the current branch.");
             return;
@@ -389,8 +388,6 @@ public class Repository {
         }
 
         // ========== 下面开始真正的三路合并 ==========
-        // 我们直接用你原来的手动找 split point 的方式，但这次要正确遍历 secondParent！
-        // （因为你不想加新方法，我们就修改原来的循环，加入 secondParent 遍历）
 
         Set<String> currentAncestors = new HashSet<>();
         Queue<Commit> queue = new LinkedList<>();
